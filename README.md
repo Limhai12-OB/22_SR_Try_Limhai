@@ -1,63 +1,48 @@
-# Chat with local documents
+# Local RAG App
 
-A FastAPI application that indexes TXT, Markdown, and text-based PDF files in
-Chroma, retrieves relevant chunks with Ollama embeddings, and generates answers
-with source filenames using a local Ollama model.
+This app answers questions using documents stored in the `data/` folder. It runs
+locally with Ollama and retrieves relevant document chunks before generating an
+answer.
 
-## Setup
+## How to run
 
-Use a Python virtual environment (the current project uses Python 3.14):
+Install Python 3.11–3.14, [Poetry](https://python-poetry.org/), and
+[Ollama](https://ollama.com/). Then run these commands from the project folder:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
+poetry install
 ollama pull nomic-embed-text
 ollama pull llama3.2:3b
+poetry run python -m app.ingestion
+poetry run python -m app.main
 ```
 
-Ollama must be running (`ollama serve` if it is not already running as a service).
-Put documents in `data/`, then run from the project root:
+Make sure Ollama is running before starting the app. Enter a question at the
+`You:` prompt, or enter `exit` to stop. To display the document chunks retrieved
+for each answer, start the app with:
 
 ```bash
-python -m app.ingest
-python -m uvicorn app.main:app --reload
+poetry run python -m app.main --show-chunks
 ```
 
-Open http://127.0.0.1:8000/docs for the interactive API, or use:
+Run the ingestion command again whenever documents in `data/` are added,
+changed, or removed.
 
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"question":"How do I reset a jammed printer?","top_k":4}'
-curl -X POST http://127.0.0.1:8000/ingest
-```
+## Chunking strategy
 
-`POST /ingest` updates the index and removes chunks for deleted documents after
-successful writes. Failed loading or embedding preserves the previous index.
-Multiple writes are not a transaction; do not run simultaneous ingestion jobs.
-An empty index returns an insufficient-information answer without calling Ollama.
+The app uses fixed-size chunks of **800 characters** with a **120-character
+overlap** between consecutive chunks. Fixed-size chunking is simple and keeps
+each piece of context small enough for efficient retrieval. The overlap retains
+context near chunk boundaries, reducing the chance that a sentence or important
+instruction is split across two chunks.
 
-## Configuration
+## Embeddings and vector database
 
-Defaults live in `app/config.py`. Export `EMBED_MODEL`, `GEN_MODEL`, `DATA_DIR`,
-`CHROMA_DB_DIR`, or `OLLAMA_HOST` to override them. Relative data/storage paths
-resolve against the project root. The default generation model is `llama3.2:3b`,
-which is already installed on this machine. Environment files are not loaded automatically.
+The embedding model is **`nomic-embed-text`**, run locally through Ollama. The
+same model embeds both document chunks and user questions so their vectors can
+be compared consistently.
 
-When changing embedding models, use a new `CHROMA_DB_DIR` and ingest again;
-vectors from different embedding models cannot be mixed. PDFs must contain
-extractable text; OCR is not included. Retrieval returns nearest chunks and does
-not guarantee that a document contains the answer.
-
-## Checks
-
-```bash
-python -m pytest -q
-python -m pip check
-```
-
-Tests use temporary Chroma storage and mocked model calls; they do not require
-Ollama or modify the normal index. Bind the development server to localhost.
-# 22_SR_Try_Limhai
-# 22_SR_Try_Limhai
+The vector database is **ChromaDB**. It stores the document text, embeddings,
+and source metadata persistently in the local `chroma_db/` directory. During a
+question, the app searches ChromaDB for the most similar chunks and passes them
+to the `llama3.2:3b` generation model to produce the answer.

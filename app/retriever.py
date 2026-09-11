@@ -6,7 +6,7 @@ from typing import List, TypedDict
 
 from app.config import TOP_K
 from app.embeddings import embed_query
-from app.ingest import get_collection
+from app.vector_store import get_collection, search_vectors
 
 
 class RetrievedChunk(TypedDict):
@@ -27,11 +27,7 @@ def retrieve(query: str, top_k: int = TOP_K) -> List[RetrievedChunk]:
         return []
     query_embedding = embed_query(query)
 
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(top_k, count),
-        include=["documents", "metadatas", "distances"],
-    )
+    results = search_vectors(collection, query_embedding, min(top_k, count))
 
     chunks: List[RetrievedChunk] = []
     documents = (results.get("documents") or [[]])[0]
